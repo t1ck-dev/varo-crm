@@ -1,202 +1,189 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { Plus, X, AlertCircle } from 'lucide-react'
+import { STAGES } from '../lib/stages'
+import { fmtMoney, isPast } from '../lib/format'
+import { Plus, AlertCircle } from 'lucide-react'
 import PipelineCard from './PipelineCard'
 import AddLeadModal from './AddLeadModal'
 
-const STAGES = ['Cold', 'Contacted', 'Interested', 'Meeting', 'Closed', 'Building', 'Built', 'Delivered']
-
-export default function Pipeline({ onSelectLead }) {
+export default function Pipeline({ token, onSelectLead }) {
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [draggedLead, setDraggedLead] = useState(null)
+  const [dragOverStage, setDragOverStage] = useState(null)
   const [lostReason, setLostReason] = useState('')
-  const [showLostPrompt, setShowLostPrompt] = useState(false)
   const [lostLeadId, setLostLeadId] = useState(null)
 
-  useEffect(() => {
-    fetchLeads()
-    const subscription = supabase
-      .channel('leads')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
-        fetchLeads()
-      })
-      .subscribe()
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async () => {
     const { data, error } = await supabase
       .from('leads')
       .select('*')
+      .eq('sync_token', token)
       .order('created_at', { ascending: false })
 
-    if (!error) {
-      setLeads(data || [])
-    }
+    if (!error) setLeads(data || [])
     setLoading(false)
+  }, [token])
+
+  useEffect(() => {
+    fetchLeads()
+    const channel = supabase
+      .channel(`leads-${token}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leads', filter: `sync_token=eq.${token}` },
+        fetchLeads
+      )
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [token, fetchLeads])
+
+  const moveLead = async (leadId, stage, extra = {}) => {
+    setLeads((prev) =>
+      prev.map((l) => (l.id === leadId ? { ...l, stage, ...extra } : l))
+    )
+    await supabase
+      .from('leads')
+      .update({ stage, stage_changed_at: new Date().toISOString(), ...extra })
+      .eq('id', leadId)
+      .eq('sync_token', token)
   }
 
-  const handleDragStart = (e, lead) => {
-    setDraggedLead(lead)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  const handleDragOver = (e) => {
+  const handleDrop = (e, stage) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleDrop = async (e, stage) => {
-    e.preventDefault()
-    if (!draggedLead) return
+    setDragOverStage(null)
+    if (!draggedLead || draggedLead.stage === stage) return
 
     if (stage === 'Lost') {
       setLostLeadId(draggedLead.id)
-      setShowLostPrompt(true)
-      setDraggedLead(null)
-      return
+    } else {
+      moveLead(draggedLead.id, stage)
     }
-
-    await supabase
-      .from('leads')
-      .update({
-        stage,
-        stage_changed_at: new Date().toISOString(),
-      })
-      .eq('id', draggedLead.id)
-
     setDraggedLead(null)
   }
 
   const handleConfirmLost = async () => {
     if (!lostLeadId) return
-
-    await supabase
-      .from('leads')
-      .update({
-        stage: 'Lost',
-        lost_reason: lostReason,
-        stage_changed_at: new Date().toISOString(),
-      })
-      .eq('id', lostLeadId)
-
-    setShowLostPrompt(false)
-    setLostReason('')
+    await moveLead(lostLeadId, 'Lost', { lost_reason: lostReason || null })
     setLostLeadId(null)
+    setLostReason('')
   }
 
-  const leadssByStage = (stage) => {
-    return leads.filter((lead) => lead.stage === stage)
-  }
+  const byStage = (stage) => leads.filter((l) => l.stage === stage)
 
-  const overdueCounts = (stage) => {
-    return leadssByStage(stage).filter(
-      (lead) => lead.next_action_date && new Date(lead.next_action_date) < new Date() && stage !== 'Delivered' && stage !== 'Lost'
-    ).length
-  }
+  const stageValue = (stage) =>
+    byStage(stage).reduce((sum, l) => sum + (Number(l.monthly_value) || 0), 0)
+
+  const overdueCount = (stage) =>
+    byStage(stage).filter((l) => isPast(l.next_action_date)).length
 
   if (loading) {
-    return <div className="text-center py-12 text-gray-400">Loading pipeline...</div>
+    return (
+      <div className="text-center py-20 text-faint text-sm animate-pulse">
+        Loading pipeline…
+      </div>
+    )
   }
 
+  const columns = [...STAGES, { id: 'Lost', color: '#e07a6a', isLost: true }]
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-syne text-gold-500">Pipeline</h2>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus size={20} /> Add cold lead
+    <div className="space-y-5">
+      <div className="flex items-center justify-between reveal">
+        <div>
+          <h2 className="text-3xl">Pipeline</h2>
+          <p className="text-faint text-xs mt-1">
+            {leads.length} lead{leads.length === 1 ? '' : 's'} &middot; drag cards between stages
+          </p>
+        </div>
+        <button onClick={() => setShowAddModal(true)} className="btn-gold">
+          <Plus size={16} /> Add lead
         </button>
       </div>
 
-      {/* Kanban Board */}
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-4" style={{ minWidth: 'min-content' }}>
-          {STAGES.map((stage) => (
-            <div
-              key={stage}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, stage)}
-              className="flex-shrink-0 w-80 bg-charcoal-800 rounded-lg p-4 border border-charcoal-700"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-syne font-bold text-gray-100">
-                  {stage}
-                  <span className="ml-2 text-sm text-gray-400">({leadssByStage(stage).length})</span>
-                </h3>
-                {overdueCounts(stage) > 0 && (
-                  <div className="flex items-center gap-1 text-red-400 text-xs">
-                    <AlertCircle size={14} />
-                    {overdueCounts(stage)}
+      <div className="overflow-x-auto pb-4 -mx-4 px-4 scroll-thin">
+        <div className="flex gap-3" style={{ minWidth: 'min-content' }}>
+          {columns.map((stage, i) => {
+            const items = byStage(stage.id)
+            const value = stageValue(stage.id)
+            const overdue = stage.isLost ? 0 : overdueCount(stage.id)
+            return (
+              <div
+                key={stage.id}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragOverStage(stage.id)
+                }}
+                onDragLeave={() => setDragOverStage(null)}
+                onDrop={(e) => handleDrop(e, stage.id)}
+                className={`kanban-col reveal flex-shrink-0 w-64 p-3 ${
+                  dragOverStage === stage.id ? 'drag-over' : ''
+                } ${stage.isLost ? 'opacity-70' : ''}`}
+                style={{ animationDelay: `${i * 35}ms` }}
+              >
+                <div className="flex items-center justify-between mb-1 px-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: stage.color }}
+                    />
+                    <span className="text-sm font-semibold truncate">{stage.id}</span>
+                    <span className="data text-faint text-xs">{items.length}</span>
                   </div>
-                )}
-              </div>
+                  {overdue > 0 && (
+                    <span className="flex items-center gap-1 text-rust text-xs">
+                      <AlertCircle size={12} /> {overdue}
+                    </span>
+                  )}
+                </div>
+                <div className="data text-faint text-[11px] px-1 mb-3 h-4">
+                  {value > 0 ? `${fmtMoney(value)} /mo` : ''}
+                </div>
 
-              <div className="space-y-3">
-                {leadssByStage(stage).map((lead) => (
-                  <PipelineCard
-                    key={lead.id}
-                    lead={lead}
-                    onDragStart={(e) => handleDragStart(e, lead)}
-                    onClick={() => onSelectLead(lead)}
-                  />
-                ))}
+                <div className="space-y-2.5 min-h-16">
+                  {items.map((lead) => (
+                    <PipelineCard
+                      key={lead.id}
+                      lead={lead}
+                      isLost={stage.isLost}
+                      onDragStart={(e) => {
+                        setDraggedLead(lead)
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onClick={() => onSelectLead(lead)}
+                    />
+                  ))}
+                  {items.length === 0 && (
+                    <div className="border border-dashed border-edge rounded-xl py-6 text-center text-faint text-xs">
+                      empty
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-
-          {/* Lost Column */}
-          <div
-            className="flex-shrink-0 w-80 bg-charcoal-800 rounded-lg p-4 border border-charcoal-700 opacity-50"
-            onDragOver={handleDragOver}
-            onDrop={(e) => handleDrop(e, 'Lost')}
-          >
-            <h3 className="font-syne font-bold text-gray-100 mb-4">
-              Lost
-              <span className="ml-2 text-sm text-gray-400">({leadssByStage('Lost').length})</span>
-            </h3>
-            <div className="space-y-3">
-              {leadssByStage('Lost').map((lead) => (
-                <PipelineCard
-                  key={lead.id}
-                  lead={lead}
-                  onDragStart={(e) => handleDragStart(e, lead)}
-                  onClick={() => onSelectLead(lead)}
-                  isLost
-                />
-              ))}
-            </div>
-          </div>
+            )
+          })}
         </div>
       </div>
 
-      {/* Lost Reason Prompt */}
-      {showLostPrompt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="card w-full max-w-md">
-            <h3 className="text-xl font-syne mb-4">Why was this lead lost?</h3>
+      {lostLeadId && (
+        <div className="modal-backdrop" onClick={() => setLostLeadId(null)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl mb-1">Mark as lost</h3>
+            <p className="text-stone text-sm mb-4">What happened? (optional)</p>
             <textarea
+              autoFocus
               value={lostReason}
               onChange={(e) => setLostReason(e.target.value)}
-              placeholder="Enter reason..."
-              className="input w-full h-24 resize-none mb-4"
+              placeholder="e.g. went with a competitor, no budget…"
+              className="field h-24 resize-none mb-4"
             />
             <div className="flex gap-2">
-              <button
-                onClick={handleConfirmLost}
-                className="flex-1 btn-primary"
-              >
-                Confirm
+              <button onClick={handleConfirmLost} className="btn-gold flex-1">
+                Mark lost
               </button>
-              <button
-                onClick={() => setShowLostPrompt(false)}
-                className="flex-1 btn-secondary"
-              >
+              <button onClick={() => setLostLeadId(null)} className="btn-ghost flex-1">
                 Cancel
               </button>
             </div>
@@ -204,9 +191,9 @@ export default function Pipeline({ onSelectLead }) {
         </div>
       )}
 
-      {/* Add Lead Modal */}
       {showAddModal && (
         <AddLeadModal
+          token={token}
           onClose={() => setShowAddModal(false)}
           onLeadAdded={fetchLeads}
         />

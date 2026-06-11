@@ -1,367 +1,376 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Plus, Check, Trash2, ExternalLink } from 'lucide-react'
+import { STAGE_IDS, SERVICE_TYPES } from '../lib/stages'
+import { daysSince } from '../lib/format'
+import {
+  ArrowLeft, Plus, Check, Trash2, ExternalLink,
+  StickyNote, Phone, Mail, MessageCircle, Users,
+} from 'lucide-react'
 
-const SERVICE_TYPES = ['ads', 'caller', '3d_site', 'full_stack', 'other']
+const ACTIVITY_TYPES = [
+  { id: 'note', label: 'Note', Icon: StickyNote },
+  { id: 'call', label: 'Call', Icon: Phone },
+  { id: 'email', label: 'Email', Icon: Mail },
+  { id: 'whatsapp', label: 'WhatsApp', Icon: MessageCircle },
+  { id: 'meeting', label: 'Meeting', Icon: Users },
+]
 
-export default function LeadDetail({ lead, onBack }) {
+const FIELDS = [
+  { key: 'contact_name', label: 'Contact name', type: 'text' },
+  { key: 'contact_phone', label: 'Phone', type: 'tel' },
+  { key: 'contact_email', label: 'Email', type: 'email' },
+  { key: 'website', label: 'Website', type: 'text', placeholder: 'https://' },
+  { key: 'monthly_value', label: 'Monthly value (R)', type: 'number', mono: true },
+  { key: 'next_action', label: 'Next action', type: 'text' },
+  { key: 'next_action_date', label: 'Next action date', type: 'date', mono: true },
+  { key: 'deadline', label: 'Delivery deadline', type: 'date', mono: true },
+]
+
+export default function LeadDetail({ token, lead, onBack }) {
   const [editedLead, setEditedLead] = useState(lead)
   const [activities, setActivities] = useState([])
   const [newActivity, setNewActivity] = useState({ type: 'note', note: '' })
   const [newDeliverable, setNewDeliverable] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
 
-  useEffect(() => {
-    fetchActivities()
-  }, [lead.id])
-
-  const fetchActivities = async () => {
+  const fetchActivities = useCallback(async () => {
     const { data } = await supabase
       .from('activity_log')
       .select('*')
       .eq('lead_id', lead.id)
+      .eq('sync_token', token)
       .order('created_at', { ascending: false })
 
     setActivities(data || [])
-  }
+  }, [lead.id, token])
+
+  useEffect(() => {
+    fetchActivities()
+  }, [fetchActivities])
 
   const handleChange = (field, value) => {
     setEditedLead((prev) => ({ ...prev, [field]: value }))
+    setSaveState('idle')
+  }
+
+  const persist = async (patch) => {
+    const { error } = await supabase
+      .from('leads')
+      .update(patch)
+      .eq('id', lead.id)
+      .eq('sync_token', token)
+    return error
   }
 
   const handleSave = async () => {
-    setLoading(true)
-    await supabase
-      .from('leads')
-      .update(editedLead)
-      .eq('id', lead.id)
-    setLoading(false)
+    setSaveState('saving')
+    const patch = {
+      company: editedLead.company?.trim() || null,
+      contact_name: editedLead.contact_name?.trim() || null,
+      contact_email: editedLead.contact_email?.trim() || null,
+      contact_phone: editedLead.contact_phone?.trim() || null,
+      website: editedLead.website?.trim() || null,
+      monthly_value:
+        editedLead.monthly_value === '' || editedLead.monthly_value == null
+          ? null
+          : Number(editedLead.monthly_value),
+      service_interests: editedLead.service_interests || [],
+      next_action: editedLead.next_action?.trim() || null,
+      next_action_date: editedLead.next_action_date || null,
+      deadline: editedLead.deadline || null,
+    }
+    const error = await persist(patch)
+    setSaveState(error ? 'error' : 'saved')
+  }
+
+  const handleStageChange = async (stage) => {
+    setEditedLead((prev) => ({ ...prev, stage }))
+    await persist({ stage, stage_changed_at: new Date().toISOString() })
+  }
+
+  const handleDeleteLead = async () => {
+    if (!confirm('Delete this lead and its full history? This cannot be undone.')) return
+    await supabase.from('leads').delete().eq('id', lead.id).eq('sync_token', token)
+    onBack()
   }
 
   const handleAddActivity = async () => {
     if (!newActivity.note.trim()) return
-
     await supabase.from('activity_log').insert([
       {
         lead_id: lead.id,
+        sync_token: token,
         activity_type: newActivity.type,
-        note: newActivity.note,
+        note: newActivity.note.trim(),
       },
     ])
-
-    setNewActivity({ type: 'note', note: '' })
+    setNewActivity((prev) => ({ ...prev, note: '' }))
     fetchActivities()
+  }
+
+  const updateDeliverables = async (updated) => {
+    setEditedLead((prev) => ({ ...prev, deliverables: updated }))
+    await persist({ deliverables: updated })
   }
 
   const handleAddDeliverable = async () => {
     if (!newDeliverable.trim()) return
-
-    const deliverables = editedLead.deliverables || []
     const updated = [
-      ...deliverables,
-      { id: Date.now(), text: newDeliverable, done: false },
+      ...(editedLead.deliverables || []),
+      { id: Date.now(), text: newDeliverable.trim(), done: false },
     ]
-
-    setEditedLead((prev) => ({ ...prev, deliverables: updated }))
-    await supabase
-      .from('leads')
-      .update({ deliverables: updated })
-      .eq('id', lead.id)
-
+    await updateDeliverables(updated)
     setNewDeliverable('')
   }
 
-  const handleToggleDeliverable = async (id) => {
-    const updated = editedLead.deliverables.map((d) =>
-      d.id === id ? { ...d, done: !d.done } : d
-    )
+  const metaUrl = `https://adlibrary.facebook.com/ads/?active_status=all&ad_type=all&country=ZA&media_type=all&search_type=keyword_unordered&q=${encodeURIComponent(editedLead.company || '')}`
 
-    setEditedLead((prev) => ({ ...prev, deliverables: updated }))
-    await supabase
-      .from('leads')
-      .update({ deliverables: updated })
-      .eq('id', lead.id)
-  }
+  const websiteUrl = editedLead.website
+    ? editedLead.website.startsWith('http')
+      ? editedLead.website
+      : `https://${editedLead.website}`
+    : null
 
-  const handleDeleteDeliverable = async (id) => {
-    const updated = editedLead.deliverables.filter((d) => d.id !== id)
-    setEditedLead((prev) => ({ ...prev, deliverables: updated }))
-    await supabase
-      .from('leads')
-      .update({ deliverables: updated })
-      .eq('id', lead.id)
-  }
-
-  const metaUrl = `https://adlibrary.facebook.com/ads/?active_status=all&ad_type=all&country=ZA&media_type=all&search_type=keyword_unordered&media_type=all&search_type=keyword_unordered&q=${encodeURIComponent(editedLead.company)}`
+  const saveLabel = {
+    idle: 'Save changes',
+    saving: 'Saving…',
+    saved: 'Saved ✓',
+    error: 'Save failed — retry',
+  }[saveState]
 
   return (
-    <div className="space-y-6">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-gold-500 hover:text-gold-400 transition-colors"
-      >
-        <ArrowLeft size={20} /> Back to Pipeline
-      </button>
+    <div className="space-y-5 reveal">
+      <div className="flex items-center justify-between gap-3">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-stone hover:text-gold transition-colors"
+        >
+          <ArrowLeft size={16} /> Pipeline
+        </button>
+        <div className="flex items-center gap-2">
+          <span className="data text-faint text-xs hidden sm:inline">
+            {daysSince(editedLead.stage_changed_at)}d in stage
+          </span>
+          <select
+            value={editedLead.stage}
+            onChange={(e) => handleStageChange(e.target.value)}
+            className="field data !w-auto text-xs py-1.5"
+          >
+            {[...STAGE_IDS, 'Lost'].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Main Details */}
+      <div className="grid md:grid-cols-3 gap-4">
+        {/* Main column */}
         <div className="md:col-span-2 space-y-4">
-          <div className="card">
-            <h2 className="text-2xl font-syne mb-4 text-gold-500">
-              {editedLead.company}
-            </h2>
+          <div className="panel">
+            <label className="label-caps mb-1.5">Company</label>
+            <input
+              value={editedLead.company || ''}
+              onChange={(e) => handleChange('company', e.target.value)}
+              placeholder="Unnamed lead"
+              className="field !text-xl !font-semibold mb-5"
+              style={{ fontFamily: 'var(--font-display)' }}
+            />
 
-            <div className="grid md:grid-cols-2 gap-4 space-y-4">
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Contact Name
-                </label>
-                <input
-                  value={editedLead.contact_name || ''}
-                  onChange={(e) => handleChange('contact_name', e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Contact Email
-                </label>
-                <input
-                  type="email"
-                  value={editedLead.contact_email || ''}
-                  onChange={(e) => handleChange('contact_email', e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Contact Phone
-                </label>
-                <input
-                  value={editedLead.contact_phone || ''}
-                  onChange={(e) => handleChange('contact_phone', e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Website
-                </label>
-                <input
-                  value={editedLead.website || ''}
-                  onChange={(e) => handleChange('website', e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Monthly Value (R)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editedLead.monthly_value || ''}
-                  onChange={(e) => handleChange('monthly_value', parseFloat(e.target.value))}
-                  className="input w-full mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Next Action
-                </label>
-                <input
-                  value={editedLead.next_action || ''}
-                  onChange={(e) => handleChange('next_action', e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Next Action Date
-                </label>
-                <input
-                  type="date"
-                  value={editedLead.next_action_date || ''}
-                  onChange={(e) => handleChange('next_action_date', e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-gray-300">
-                  Delivery Deadline
-                </label>
-                <input
-                  type="date"
-                  value={editedLead.deadline || ''}
-                  onChange={(e) => handleChange('deadline', e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
+            <div className="grid sm:grid-cols-2 gap-x-4 gap-y-3">
+              {FIELDS.map(({ key, label, type, placeholder, mono }) => (
+                <div key={key}>
+                  <label className="label-caps mb-1.5">{label}</label>
+                  <input
+                    type={type}
+                    step={type === 'number' ? '0.01' : undefined}
+                    min={type === 'number' ? '0' : undefined}
+                    value={editedLead[key] ?? ''}
+                    onChange={(e) => handleChange(key, e.target.value)}
+                    placeholder={placeholder}
+                    className={`field ${mono ? 'data' : ''}`}
+                  />
+                </div>
+              ))}
             </div>
 
-            {/* Service Interests */}
-            <div className="mt-4 pt-4 border-t border-charcoal-700">
-              <label className="block text-xs font-medium text-gray-300 mb-2">
-                Service Interests
-              </label>
+            <div className="mt-5 pt-4 border-t border-edge">
+              <label className="label-caps mb-2.5">Service interests</label>
               <div className="flex flex-wrap gap-2">
-                {SERVICE_TYPES.map((service) => (
-                  <label key={service} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editedLead.service_interests?.includes(service) || false}
-                      onChange={(e) => {
-                        const updated = e.target.checked
-                          ? [...(editedLead.service_interests || []), service]
-                          : editedLead.service_interests?.filter((s) => s !== service) || []
+                {SERVICE_TYPES.map(({ id, label }) => {
+                  const active = editedLead.service_interests?.includes(id)
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        const current = editedLead.service_interests || []
+                        const updated = active
+                          ? current.filter((s) => s !== id)
+                          : [...current, id]
                         handleChange('service_interests', updated)
                       }}
-                      className="rounded"
-                    />
-                    <span className="text-sm capitalize">{service.replace('_', ' ')}</span>
-                  </label>
-                ))}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                        active
+                          ? 'border-gold/60 bg-gold-dim text-gold-bright'
+                          : 'border-edge text-stone hover:border-edge-strong'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
             <button
               onClick={handleSave}
-              disabled={loading}
-              className="mt-4 btn-primary disabled:opacity-50"
+              disabled={saveState === 'saving'}
+              className="btn-gold mt-5"
             >
-              {loading ? 'Saving...' : 'Save Changes'}
+              {saveLabel}
             </button>
           </div>
 
           {/* Deliverables */}
-          <div className="card">
-            <h3 className="text-lg font-syne mb-4 text-gold-500">Deliverables</h3>
-            <div className="space-y-2 mb-4">
-              {(editedLead.deliverables || []).map((deliverable) => (
+          <div className="panel">
+            <label className="label-caps mb-3">Deliverables</label>
+            <div className="space-y-1.5 mb-3">
+              {(editedLead.deliverables || []).map((d) => (
                 <div
-                  key={deliverable.id}
-                  className="flex items-center gap-2 p-2 bg-charcoal-700 rounded"
+                  key={d.id}
+                  className="group flex items-center gap-2.5 px-3 py-2 bg-black/20 border border-edge rounded-lg"
                 >
                   <button
-                    onClick={() => handleToggleDeliverable(deliverable.id)}
-                    className={`flex-shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
-                      deliverable.done
-                        ? 'bg-gold-500 border-gold-500'
-                        : 'border-charcoal-600'
+                    onClick={() =>
+                      updateDeliverables(
+                        editedLead.deliverables.map((x) =>
+                          x.id === d.id ? { ...x, done: !x.done } : x
+                        )
+                      )
+                    }
+                    className={`flex-shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                      d.done ? 'bg-gold border-gold' : 'border-edge-strong hover:border-gold'
                     }`}
                   >
-                    {deliverable.done && <Check size={14} className="text-charcoal-900" />}
+                    {d.done && <Check size={12} className="text-ink" />}
                   </button>
                   <span
-                    className={`flex-1 text-sm ${
-                      deliverable.done
-                        ? 'line-through text-gray-500'
-                        : 'text-gray-200'
-                    }`}
+                    className={`flex-1 text-sm ${d.done ? 'line-through text-faint' : 'text-cream'}`}
                   >
-                    {deliverable.text}
+                    {d.text}
                   </span>
                   <button
-                    onClick={() => handleDeleteDeliverable(deliverable.id)}
-                    className="text-gray-400 hover:text-red-400 transition-colors"
+                    onClick={() =>
+                      updateDeliverables(editedLead.deliverables.filter((x) => x.id !== d.id))
+                    }
+                    className="text-faint hover:text-rust transition-colors opacity-0 group-hover:opacity-100"
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
               ))}
+              {!(editedLead.deliverables || []).length && (
+                <p className="text-faint text-xs py-1">Nothing promised yet.</p>
+              )}
             </div>
-
             <div className="flex gap-2">
               <input
                 value={newDeliverable}
                 onChange={(e) => setNewDeliverable(e.target.value)}
-                placeholder="Add new deliverable..."
-                className="input flex-1"
-                onKeyPress={(e) => e.key === 'Enter' && handleAddDeliverable()}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddDeliverable()}
+                placeholder="Add a deliverable…"
+                className="field flex-1"
               />
-              <button onClick={handleAddDeliverable} className="btn-primary">
-                <Plus size={20} />
+              <button onClick={handleAddDeliverable} className="btn-ghost !px-3">
+                <Plus size={16} />
               </button>
             </div>
           </div>
+
+          <button onClick={handleDeleteLead} className="btn-danger text-xs">
+            <Trash2 size={13} /> Delete lead
+          </button>
         </div>
 
         {/* Sidebar */}
         <div className="space-y-4">
-          {/* Quick Links */}
-          <div className="card">
-            <h3 className="text-lg font-syne mb-4 text-gold-500">Quick Links</h3>
-            <div className="space-y-2">
-              {editedLead.website && (
+          <div className="panel">
+            <label className="label-caps mb-3">Quick links</label>
+            <div className="space-y-1.5">
+              {websiteUrl && (
                 <a
-                  href={editedLead.website}
+                  href={websiteUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 p-2 bg-charcoal-700 rounded hover:bg-charcoal-600 transition-colors text-sm"
+                  className="flex items-center justify-between px-3 py-2 bg-black/20 border border-edge rounded-lg hover:border-gold/50 transition-colors text-sm text-cream"
                 >
-                  Website <ExternalLink size={14} />
+                  Website <ExternalLink size={13} className="text-faint" />
                 </a>
               )}
               <a
                 href={metaUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 p-2 bg-charcoal-700 rounded hover:bg-charcoal-600 transition-colors text-sm"
+                className="flex items-center justify-between px-3 py-2 bg-black/20 border border-edge rounded-lg hover:border-gold/50 transition-colors text-sm text-cream"
               >
-                Meta Ad Library <ExternalLink size={14} />
+                Meta Ad Library <ExternalLink size={13} className="text-faint" />
               </a>
             </div>
           </div>
 
-          {/* Activity Log */}
-          <div className="card">
-            <h3 className="text-lg font-syne mb-4 text-gold-500">Activity</h3>
+          {/* Activity */}
+          <div className="panel">
+            <label className="label-caps mb-3">Activity</label>
 
-            <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
-              {activities.map((activity) => (
-                <div key={activity.id} className="text-xs">
-                  <span className="inline-block px-2 py-1 bg-charcoal-700 rounded text-gold-400 mb-1">
-                    {activity.activity_type}
-                  </span>
-                  <p className="text-gray-300">{activity.note}</p>
-                  <p className="text-gray-500">
-                    {new Date(activity.created_at).toLocaleDateString()}
-                  </p>
-                </div>
+            <div className="flex gap-1 mb-2">
+              {ACTIVITY_TYPES.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  title={label}
+                  onClick={() => setNewActivity((prev) => ({ ...prev, type: id }))}
+                  className={`flex-1 flex items-center justify-center py-2 rounded-lg border transition-colors ${
+                    newActivity.type === id
+                      ? 'border-gold/60 bg-gold-dim text-gold-bright'
+                      : 'border-edge text-faint hover:text-stone'
+                  }`}
+                >
+                  <Icon size={14} />
+                </button>
               ))}
             </div>
+            <textarea
+              value={newActivity.note}
+              onChange={(e) => setNewActivity((prev) => ({ ...prev, note: e.target.value }))}
+              placeholder={`Log a ${newActivity.type}…`}
+              className="field resize-none h-16 text-sm mb-2"
+            />
+            <button onClick={handleAddActivity} className="btn-ghost w-full text-xs mb-4">
+              <Plus size={14} /> Add activity
+            </button>
 
-            <div className="space-y-2">
-              <select
-                value={newActivity.type}
-                onChange={(e) => setNewActivity({ ...newActivity, type: e.target.value })}
-                className="input w-full text-sm"
-              >
-                <option value="note">Note</option>
-                <option value="call">Call</option>
-                <option value="email">Email</option>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="meeting">Meeting</option>
-              </select>
-              <textarea
-                value={newActivity.note}
-                onChange={(e) => setNewActivity({ ...newActivity, note: e.target.value })}
-                placeholder="Add activity..."
-                className="input w-full text-sm resize-none h-16"
-              />
-              <button
-                onClick={handleAddActivity}
-                className="w-full btn-primary text-sm"
-              >
-                <Plus size={16} className="inline mr-1" /> Add Activity
-              </button>
+            <div className="space-y-3 max-h-80 overflow-y-auto scroll-thin">
+              {activities.map((a) => {
+                const meta = ACTIVITY_TYPES.find((t) => t.id === a.activity_type)
+                const Icon = meta?.Icon || StickyNote
+                return (
+                  <div key={a.id} className="flex gap-2.5 text-sm">
+                    <Icon size={14} className="text-gold flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-cream/90 break-words">{a.note}</p>
+                      <p className="data text-faint text-[11px] mt-0.5">
+                        {new Date(a.created_at).toLocaleDateString('en-ZA', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}{' '}
+                        &middot; {meta?.label || a.activity_type}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+              {!activities.length && (
+                <p className="text-faint text-xs">No touchpoints logged yet.</p>
+              )}
             </div>
           </div>
         </div>

@@ -1,53 +1,50 @@
-import { Calendar, AlertCircle } from 'lucide-react'
+import { Calendar } from 'lucide-react'
+import { fmtMoney, fmtDate, daysSince, isPast } from '../lib/format'
 
 export default function PipelineCard({ lead, onDragStart, onClick, isLost }) {
-  const daysInStage = lead.stage_changed_at
-    ? Math.floor((new Date() - new Date(lead.stage_changed_at)) / (1000 * 60 * 60 * 24))
-    : 0
-
-  const isOverdue = lead.next_action_date && new Date(lead.next_action_date) < new Date()
+  const days = daysSince(lead.stage_changed_at)
+  const overdue = !isLost && isPast(lead.next_action_date)
 
   return (
     <div
       draggable={!isLost}
       onDragStart={onDragStart}
       onClick={onClick}
-      className={`p-4 rounded-lg border cursor-move transition-colors ${
-        isLost
-          ? 'bg-charcoal-700 border-charcoal-600 opacity-75 cursor-not-allowed'
-          : isOverdue
-          ? 'bg-red-900 bg-opacity-20 border-red-600 hover:border-red-500'
-          : 'bg-charcoal-700 border-charcoal-600 hover:border-gold-500'
-      }`}
+      className={`lead-card ${overdue ? 'overdue' : ''} ${isLost ? 'is-lost' : ''}`}
     >
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex-1">
-          <h4 className="font-bold text-gray-100 truncate">{lead.company}</h4>
-          <p className="text-xs text-gray-400 truncate">{lead.contact_name}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-cream truncate">
+            {lead.company || <span className="text-faint italic">Unnamed lead</span>}
+          </p>
+          {lead.contact_name && (
+            <p className="text-xs text-stone truncate">{lead.contact_name}</p>
+          )}
         </div>
-        {isOverdue && <AlertCircle size={16} className="text-red-400 flex-shrink-0 ml-2" />}
+        {Number(lead.monthly_value) > 0 && (
+          <span className="data text-gold text-xs font-medium whitespace-nowrap pt-0.5">
+            {fmtMoney(lead.monthly_value)}
+          </span>
+        )}
       </div>
 
-      {lead.monthly_value > 0 && (
-        <div className="mb-2 text-sm font-semibold text-gold-400">
-          R{lead.monthly_value.toLocaleString()}
-        </div>
-      )}
-
       {lead.next_action && (
-        <div className="text-xs text-gray-300 bg-charcoal-600 rounded px-2 py-1 mb-2 truncate">
+        <p className="text-xs text-stone bg-black/25 border border-edge rounded-md px-2 py-1 mt-2 truncate">
           {lead.next_action}
-        </div>
+        </p>
       )}
 
-      <div className="flex items-center justify-between text-xs text-gray-400">
-        {lead.next_action_date && (
-          <div className="flex items-center gap-1">
-            <Calendar size={12} />
-            {new Date(lead.next_action_date).toLocaleDateString()}
-          </div>
-        )}
-        <div>{daysInStage}d in stage</div>
+      <div className="flex items-center justify-between mt-2.5 text-[11px]">
+        <span
+          className={`data flex items-center gap-1 ${overdue ? 'text-rust' : 'text-faint'}`}
+        >
+          {lead.next_action_date && (
+            <>
+              <Calendar size={11} /> {fmtDate(lead.next_action_date)}
+            </>
+          )}
+        </span>
+        <span className="data text-faint">{days}d</span>
       </div>
     </div>
   )
