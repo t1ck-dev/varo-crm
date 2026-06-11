@@ -70,12 +70,21 @@ export default function Dashboard() {
   const generateSyncCode = async () => {
     setGeneratingCode(true)
     try {
-      const code = Math.random().toString(36).substring(2, 9).toUpperCase()
+      // Generate cryptographically secure code
+      const bytes = new Uint8Array(12)
+      crypto.getRandomValues(bytes)
+      const code = Array.from(bytes, (b) => b.toString(36)).join('').substring(0, 16).toUpperCase()
+
       const expiresAt = new Date()
       expiresAt.setHours(expiresAt.getHours() + 24) // Valid for 24 hours
 
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
       const { error } = await supabase.from('sync_codes').insert([
         {
+          user_id: user.id,
           code,
           expires_at: expiresAt.toISOString(),
         },
