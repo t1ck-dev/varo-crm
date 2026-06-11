@@ -1,45 +1,102 @@
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700&family=DM+Sans:wght@400;500;700&display=swap');
 
+:root {
+  --charcoal-900: #1a1a1a;
+  --charcoal-800: #2d2d2d;
+  --charcoal-700: #3f3f3f;
+  --charcoal-600: #505050;
+  --gold-500: #d4a574;
+  --gold-400: #e6b68a;
+  --gold-300: #f0d4b8;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    @apply bg-charcoal-900 text-gray-200 font-dm;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-syne font-bold;
-  }
-
-  h1 {
-    @apply text-4xl;
-  }
-
-  h2 {
-    @apply text-2xl;
-  }
-
-  h3 {
-    @apply text-xl;
-  }
+* {
+  box-sizing: border-box;
 }
 
-@layer components {
-  .btn-primary {
-    @apply px-4 py-2 bg-gold-500 text-charcoal-900 rounded-lg font-medium hover:bg-gold-400 transition-colors;
-  }
+body {
+  background-color: var(--charcoal-900);
+  color: #d1d5db;
+  font-family: 'DM Sans', sans-serif;
+  margin: 0;
+  padding: 0;
+}
 
-  .btn-secondary {
-    @apply px-4 py-2 bg-charcoal-700 text-gray-200 rounded-lg font-medium hover:bg-charcoal-600 transition-colors border border-charcoal-600;
-  }
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+}
 
-  .card {
-    @apply bg-charcoal-800 rounded-lg p-4 border border-charcoal-700;
-  }
+h1 {
+  font-size: 2.25rem;
+}
 
-  .input {
-    @apply bg-charcoal-700 text-gray-200 rounded-lg px-3 py-2 border border-charcoal-600 focus:border-gold-500 focus:outline-none transition-colors;
-  }
+h2 {
+  font-size: 1.5rem;
+}
+
+h3 {
+  font-size: 1.25rem;
+}
+
+.btn-primary {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition: all 0.3s;
+  background-color: var(--gold-500);
+  color: var(--charcoal-900);
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background-color: var(--gold-400);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition: all 0.3s;
+  background-color: var(--charcoal-700);
+  color: #d1d5db;
+  border: 1px solid var(--charcoal-600);
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background-color: var(--charcoal-600);
+}
+
+.card {
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background-color: var(--charcoal-800);
+  border: 1px solid var(--charcoal-700);
+}
+
+.input {
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--charcoal-700);
+  color: #d1d5db;
+  border: 1px solid var(--charcoal-600);
+  transition: all 0.3s;
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.input:focus {
+  border-color: var(--gold-500);
+  outline: none;
 }
