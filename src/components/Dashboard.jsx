@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { TrendingUp, Users, Target, AlertCircle } from 'lucide-react'
+import { TrendingUp, Users, Target, AlertCircle, Copy, Check } from 'lucide-react'
 
 export default function Dashboard() {
   const [leads, setLeads] = useState([])
   const [settings, setSettings] = useState({ mrr_goal: 10000 })
   const [loading, setLoading] = useState(true)
+  const [syncCode, setSyncCode] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const [generatingCode, setGeneratingCode] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -64,13 +67,75 @@ export default function Dashboard() {
 
   const mrrGoalPercent = ((totalMRR / settings.mrr_goal) * 100).toFixed(1)
 
+  const generateSyncCode = async () => {
+    setGeneratingCode(true)
+    try {
+      const code = Math.random().toString(36).substring(2, 9).toUpperCase()
+      const expiresAt = new Date()
+      expiresAt.setHours(expiresAt.getHours() + 24) // Valid for 24 hours
+
+      const { error } = await supabase.from('sync_codes').insert([
+        {
+          code,
+          expires_at: expiresAt.toISOString(),
+        },
+      ])
+
+      if (error) throw error
+      setSyncCode(code)
+    } catch (err) {
+      console.error('Error generating sync code:', err)
+    } finally {
+      setGeneratingCode(false)
+    }
+  }
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(syncCode)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   if (loading) {
     return <div className="text-center py-12 text-gray-400">Loading dashboard...</div>
   }
 
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-syne text-gold-500">Dashboard</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-syne text-gold-500">Dashboard</h2>
+        <button
+          onClick={generateSyncCode}
+          disabled={generatingCode || syncCode}
+          className="btn-secondary text-sm disabled:opacity-50"
+        >
+          {syncCode ? `Code: ${syncCode}` : 'Generate Sync Code'}
+        </button>
+      </div>
+
+      {syncCode && (
+        <div className="card border-gold-500">
+          <p className="text-sm text-gray-400 mb-2">Sync Code (valid 24h)</p>
+          <div className="flex items-center gap-2">
+            <div className="text-2xl font-mono font-bold text-gold-400 tracking-widest">
+              {syncCode}
+            </div>
+            <button
+              onClick={copyToClipboard}
+              className="p-2 hover:bg-charcoal-700 rounded transition-colors"
+            >
+              {copied ? (
+                <Check size={20} className="text-gold-500" />
+              ) : (
+                <Copy size={20} className="text-gray-400" />
+              )}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            On your phone, go to Varo CRM, tap "Sync Phone" and paste this code.
+          </p>
+        </div>
+      )}
 
       {/* Key Metrics */}
       <div className="grid md:grid-cols-4 gap-4">

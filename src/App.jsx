@@ -11,11 +11,24 @@ function App() {
   const [currentView, setCurrentView] = useState('pipeline')
   const [selectedLead, setSelectedLead] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
+    const initAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) throw error
+        setSession(session)
+        setLoading(false)
+      } catch (err) {
+        console.error('Auth error:', err)
+        setError(err.message)
+        setLoading(false)
+      }
+    }
+
+    initAuth()
 
     const {
       data: { subscription },
@@ -23,7 +36,7 @@ function App() {
       setSession(session)
     })
 
-    return () => subscription.unsubscribe()
+    return () => subscription?.unsubscribe()
   }, [])
 
   const handleSelectLead = (lead) => {
@@ -39,6 +52,31 @@ function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setSession(null)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-charcoal-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mb-4 text-gold-500 text-2xl">Loading...</div>
+          <p className="text-gray-400">Connecting to Varo CRM</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-charcoal-900 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="mb-4 text-red-500 text-2xl">Error</div>
+          <p className="text-gray-400 mb-4">{error}</p>
+          <button onClick={() => window.location.reload()} className="btn-primary">
+            Retry
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!session) {
