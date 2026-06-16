@@ -5,6 +5,7 @@ import SyncModal from './components/SyncModal'
 import Pipeline from './components/Pipeline'
 import LeadDetail from './components/LeadDetail'
 import Dashboard from './components/Dashboard'
+import CallMode from './components/CallMode'
 import { RefreshCw } from 'lucide-react'
 
 function App() {
@@ -51,13 +52,22 @@ function App() {
 
           <nav className="seg">
             <button
-              className={currentView !== 'dashboard' ? 'active' : ''}
+              className={currentView === 'pipeline' || currentView === 'detail' ? 'active' : ''}
               onClick={() => {
                 setSelectedLead(null)
                 setCurrentView('pipeline')
               }}
             >
               Pipeline
+            </button>
+            <button
+              className={currentView === 'callmode' ? 'active' : ''}
+              onClick={() => {
+                setSelectedLead(null)
+                setCurrentView('callmode')
+              }}
+            >
+              Call mode
             </button>
             <button
               className={currentView === 'dashboard' ? 'active' : ''}
@@ -86,6 +96,7 @@ function App() {
         {currentView === 'detail' && selectedLead && (
           <LeadDetail token={token} lead={selectedLead} onBack={handleBackToBoard} />
         )}
+        {currentView === 'callmode' && <CallMode token={token} />}
         {currentView === 'dashboard' && <Dashboard token={token} />}
       </main>
 

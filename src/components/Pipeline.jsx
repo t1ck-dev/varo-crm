@@ -2,14 +2,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { STAGES } from '../lib/stages'
 import { fmtMoney, isPast } from '../lib/format'
-import { Plus, AlertCircle } from 'lucide-react'
+import { Plus, AlertCircle, Upload } from 'lucide-react'
 import PipelineCard from './PipelineCard'
 import AddLeadModal from './AddLeadModal'
+import ImportLeadsModal from './ImportLeadsModal'
 
 export default function Pipeline({ token, onSelectLead }) {
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [draggedLead, setDraggedLead] = useState(null)
   const [dragOverStage, setDragOverStage] = useState(null)
   const [lostReason, setLostReason] = useState('')
@@ -98,9 +100,14 @@ export default function Pipeline({ token, onSelectLead }) {
             {leads.length} lead{leads.length === 1 ? '' : 's'} &middot; drag cards between stages
           </p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="btn-gold">
-          <Plus size={16} /> Add lead
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowImportModal(true)} className="btn-ghost">
+            <Upload size={15} /> Import
+          </button>
+          <button onClick={() => setShowAddModal(true)} className="btn-gold">
+            <Plus size={16} /> Add lead
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto pb-4 -mx-4 px-4 scroll-thin">
@@ -196,6 +203,14 @@ export default function Pipeline({ token, onSelectLead }) {
           token={token}
           onClose={() => setShowAddModal(false)}
           onLeadAdded={fetchLeads}
+        />
+      )}
+
+      {showImportModal && (
+        <ImportLeadsModal
+          token={token}
+          onClose={() => setShowImportModal(false)}
+          onImported={fetchLeads}
         />
       )}
     </div>

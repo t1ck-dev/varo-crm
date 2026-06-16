@@ -64,3 +64,10 @@ create index idx_activity_log_sync_token on activity_log(sync_token);
 
 -- Realtime for instant phone/desktop sync
 alter publication supabase_realtime add table leads;
+
+-- ── Caller Mode migration (2026-06-15) ────────────────────────────────────
+-- Non-destructive: adds niche tagging on leads and caller attribution on
+-- activity. Safe to run on the existing database (idempotent).
+alter table leads add column if not exists niche text;
+alter table activity_log add column if not exists caller text;
+create index if not exists idx_leads_niche on leads(niche);

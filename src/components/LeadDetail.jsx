@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { STAGE_IDS, SERVICE_TYPES } from '../lib/stages'
+import { NICHES } from '../lib/niches'
 import { daysSince } from '../lib/format'
 import {
   ArrowLeft, Plus, Check, Trash2, ExternalLink,
@@ -75,6 +76,7 @@ export default function LeadDetail({ token, lead, onBack }) {
           ? null
           : Number(editedLead.monthly_value),
       service_interests: editedLead.service_interests || [],
+      niche: editedLead.niche || null,
       next_action: editedLead.next_action?.trim() || null,
       next_action_date: editedLead.next_action_date || null,
       deadline: editedLead.deadline || null,
@@ -175,6 +177,20 @@ export default function LeadDetail({ token, lead, onBack }) {
               className="field !text-xl !font-semibold mb-5"
               style={{ fontFamily: 'var(--font-display)' }}
             />
+
+            <div className="mb-3">
+              <label className="label-caps mb-1.5">Niche</label>
+              <select
+                value={editedLead.niche || ''}
+                onChange={(e) => handleChange('niche', e.target.value)}
+                className="field"
+              >
+                <option value="">— none —</option>
+                {NICHES.map((n) => (
+                  <option key={n.id} value={n.id}>{n.label}</option>
+                ))}
+              </select>
+            </div>
 
             <div className="grid sm:grid-cols-2 gap-x-4 gap-y-3">
               {FIELDS.map(({ key, label, type, placeholder, mono }) => (
@@ -363,6 +379,7 @@ export default function LeadDetail({ token, lead, onBack }) {
                           month: 'short',
                         })}{' '}
                         &middot; {meta?.label || a.activity_type}
+                        {a.caller && <> &middot; by {a.caller}</>}
                       </p>
                     </div>
                   </div>

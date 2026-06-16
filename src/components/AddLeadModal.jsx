@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { NICHES } from '../lib/niches'
 import { X, ChevronDown, ChevronUp } from 'lucide-react'
 
 const EMPTY_FORM = {
@@ -9,6 +10,7 @@ const EMPTY_FORM = {
   contact_phone: '',
   website: '',
   monthly_value: '',
+  niche: '',
 }
 
 export default function AddLeadModal({ token, onClose, onLeadAdded }) {
@@ -36,6 +38,7 @@ export default function AddLeadModal({ token, onClose, onLeadAdded }) {
           contact_phone: form.contact_phone.trim() || null,
           website: form.website.trim() || null,
           monthly_value: form.monthly_value ? parseFloat(form.monthly_value) : null,
+          niche: form.niche || null,
           stage: 'Cold',
         },
       ])
@@ -85,6 +88,19 @@ export default function AddLeadModal({ token, onClose, onLeadAdded }) {
 
           {showDetails && (
             <div className="space-y-3 reveal">
+              <div>
+                <label className="label-caps mb-1.5">Niche</label>
+                <select
+                  value={form.niche}
+                  onChange={(e) => setField('niche', e.target.value)}
+                  className="field"
+                >
+                  <option value="">— none —</option>
+                  {NICHES.map((n) => (
+                    <option key={n.id} value={n.id}>{n.label}</option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label-caps mb-1.5">Contact name</label>

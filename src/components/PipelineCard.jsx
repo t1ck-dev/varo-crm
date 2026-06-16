@@ -1,9 +1,11 @@
 import { Calendar } from 'lucide-react'
 import { fmtMoney, fmtDate, daysSince, isPast } from '../lib/format'
+import { getNiche } from '../lib/niches'
 
 export default function PipelineCard({ lead, onDragStart, onClick, isLost }) {
   const days = daysSince(lead.stage_changed_at)
   const overdue = !isLost && isPast(lead.next_action_date)
+  const niche = getNiche(lead.niche)
 
   return (
     <div
@@ -27,6 +29,18 @@ export default function PipelineCard({ lead, onDragStart, onClick, isLost }) {
           </span>
         )}
       </div>
+
+      {niche && (
+        <span
+          className="inline-flex items-center gap-1.5 text-[10px] mt-2 px-2 py-0.5 rounded-full border border-edge text-stone"
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+            style={{ background: niche.color }}
+          />
+          {niche.label}
+        </span>
+      )}
 
       {lead.next_action && (
         <p className="text-xs text-stone bg-black/25 border border-edge rounded-md px-2 py-1 mt-2 truncate">
